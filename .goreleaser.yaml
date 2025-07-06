@@ -1,0 +1,37 @@
+project_name: "gotablestats"
+
+# before are hooks that will be run before any builds are done, so good to put install scripts and stuff that your builds need here
+before:
+  hooks:
+    # Remove unused packaged from the build process
+    - go mod tidy
+    - go generate
+
+
+builds:
+  - main: ./main.go
+    binary: gotablestats
+    goos: ["linux", "darwin", "windows"]
+    goarch: ["386", "amd64", "arm64"]
+    ldflags:
+      - -s -w -X "github.com/WindowGenerator/gotablestats/cmd.version={{.Version}}"
+    env:
+      - CGO_ENABLED=0
+
+nfpms:
+  - package_name: gotablestats
+    homepage: https://github.com/WindowGenerator/gotablestats/
+    maintainer: Chudov Sergei <chudov42@gmail.com>
+    description: |-
+      Template for golang projects
+    formats:
+      - rpm
+      - deb
+
+sboms:
+  - artifacts: archive
+
+changelog:
+  sort: "asc"
+  filters:
+    exclude: ["^docs:", "demo", "^hugo:", "Merge pull request", "Merge branch"]
