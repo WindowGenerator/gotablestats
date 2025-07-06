@@ -86,6 +86,10 @@ The tool prints a human-readable report to stdout, including:
 * Assumes UTF-8 encoding
 * Designed for tabular files where the first row is a header
 
+## Roadmap
+
+See the [ROADMAP.md](./ROADMAP.md) for upcoming features and development plans.
+
 ## Development
 
 This CLI tool is built using:
