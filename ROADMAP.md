@@ -6,10 +6,6 @@ A forward-looking roadmap for planned improvements to `gotablestats` — a light
 
 ## 🤩 Parquet File Support
 
-### Track
-
-Input Format Extension
-
 ### Motivation
 
 Expand usability by supporting columnar data formats common in data pipelines and analytics workflows.
@@ -21,10 +17,6 @@ Implement functionality to read `.parquet` files using an efficient Go-based lib
 ---
 
 ## 📊 Extended Analytics
-
-### Track
-
-Analytical Features
 
 ### Motivation
 
@@ -45,10 +37,6 @@ These should be optional and controlled via flags to maintain performance for li
 
 ## 📂 Save Analytics Output
 
-### Track
-
-Output & Integration
-
 ### Motivation
 
 Enable integration with other tools and workflows by supporting persistent output formats.
@@ -67,10 +55,6 @@ Allow users to specify an output file path with `--output` and optionally choose
 
 ## 🛠️ Custom Null Value Configuration
 
-### Track
-
-Data Cleaning Customization
-
 ### Motivation
 
 Different datasets may use different placeholders for missing or null values; allowing customization improves accuracy.
@@ -78,3 +62,58 @@ Different datasets may use different placeholders for missing or null values; al
 ### Description
 
 Introduce a flag like `--nulls` that accepts a comma-separated list of values (e.g., `"NA,null,missing"`) which should be interpreted as missing. This will improve completeness and quality metrics.
+
+---
+
+## 🗒️ New Data Types Support
+
+### Motivation
+Improve accuracy and usefulness of analysis by supporting common data types not currently recognized.
+
+### Description
+Implement support for additional types:
+- [ ] `Date`
+- [ ] `Datetime`
+- [ ] `Boolean`
+- [ ] `URL like`
+- [ ] `Email like?`
+
+Enhance type inference logic and provide type-specific statistics such as weekday distribution for dates or true/false counts for booleans.
+
+---
+
+## ⬆️ New Quantile Statistics (Q1, Q3)
+
+
+### Motivation
+Provide better insight into distribution shape and potential outliers by reporting quartiles.
+
+### Description
+Extend statistical output with first (Q1) and third (Q3) quartiles in addition to the existing min, max, and mean metrics.
+Support optional flag to enable/disable quartile computation.
+
+---
+
+## ⚖️ Measurement Error Estimation
+
+### Motivation
+Provide transparency about uncertainty in sampled statistics, especially on incomplete or sampled datasets.
+
+### Description
+Estimate and display standard error or confidence intervals for key metrics like mean, proportion of nulls, and unique value count.
+Allow tuning precision via sample size and confidence flags.
+
+---
+
+## 🚀 Multiprocessing and Multithreading Settings
+
+### Motivation
+Improve speed and scalability when working with large datasets on modern multi-core systems.
+
+### Description
+Introduce optional CLI flags or config-based control for:
+- [ ] Number of goroutines (threads)
+- [ ] Use of multiprocessing for file chunks or column groups
+- [ ] Tuning performance vs memory usage trade-offs
+
+Provide benchmarks and sensible defaults for typical dataset sizes.

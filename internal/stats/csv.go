@@ -63,6 +63,7 @@ func (r *CSVReader) ReadTable(filePath string, config SamplingConfig) (*TableSta
 	}
 
 	var records [][]string
+	var readerBytes int64
 
 	// Decide sampling strategy based on file size
 	if fileSize <= config.MaxFileSize {
@@ -76,13 +77,13 @@ func (r *CSVReader) ReadTable(filePath string, config SamplingConfig) (*TableSta
 		stats.EstimatedRows = stats.RowCount
 	} else {
 		// Large file - use probabilistic sampling
-		records, err = r.sampleRecords(file, fileSize, config)
+		records, readerBytes, err = r.sampleRecords(file, fileSize, config)
 		if err != nil {
 			return nil, fmt.Errorf("failed to sample records: %w", err)
 		}
 		stats.RowCount = int64(len(records))
 		// Estimate total rows based on sampling
-		stats.EstimatedRows = r.estimateRowCount(fileSize, len(records), config)
+		stats.EstimatedRows = r.estimateRowCount(fileSize, readerBytes, config)
 	}
 
 	if len(records) == 0 {
@@ -104,23 +105,35 @@ func (r *CSVReader) ReadTable(filePath string, config SamplingConfig) (*TableSta
 	return stats, nil
 }
 
-func (r *CSVReader) sampleRecords(file *os.File, fileSize int64, config SamplingConfig) ([][]string, error) {
+func (r *CSVReader) sampleRecords(file *os.File, fileSize int64, config SamplingConfig) ([][]string, int64, error) {
 	var allRecords [][]string
 	recordsPerPosition := config.SampleSize / config.RandomPositions
 	if recordsPerPosition < 1 {
 		recordsPerPosition = 1
 	}
 
+	var readerBytes int64 = 0
+
 	for i := 0; i < config.RandomPositions; i++ {
 		// Generate random position (skip first 1% to avoid header area)
 		minPos := fileSize / 100
 		randomPos := minPos + rand.Int63n(fileSize-minPos)
 
-		records, err := r.readFromPosition(file, randomPos, recordsPerPosition)
+		_, err := file.Seek(randomPos, io.SeekStart)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		records, err := r.readFromPosition(file, recordsPerPosition)
 		if err != nil {
 			continue // Skip failed positions
 		}
+		current, err := file.Seek(0, io.SeekCurrent)
+		if err != nil {
+			return nil, 0, err
+		}
 
+		readerBytes += current - randomPos
 		allRecords = append(allRecords, records...)
 
 		if len(allRecords) >= config.SampleSize {
@@ -133,20 +146,14 @@ func (r *CSVReader) sampleRecords(file *os.File, fileSize int64, config Sampling
 		allRecords = allRecords[:config.SampleSize]
 	}
 
-	return allRecords, nil
+	return allRecords, readerBytes, nil
 }
 
-func (r *CSVReader) readFromPosition(file *os.File, position int64, maxRecords int) ([][]string, error) {
-	// Seek to random position
-	_, err := file.Seek(position, 0)
-	if err != nil {
-		return nil, err
-	}
-
+func (r *CSVReader) readFromPosition(file *os.File, maxRecords int) ([][]string, error) {
 	reader := bufio.NewReader(file)
 
 	// Skip to next complete line (in case we're in the middle of a line)
-	_, _, err = reader.ReadLine()
+	_, _, err := reader.ReadLine()
 	if err != nil && err != io.EOF {
 		return nil, err
 	}
@@ -170,9 +177,9 @@ func (r *CSVReader) readFromPosition(file *os.File, position int64, maxRecords i
 	return records, nil
 }
 
-func (r *CSVReader) estimateRowCount(fileSize int64, sampleSize int, config SamplingConfig) int64 {
+func (r *CSVReader) estimateRowCount(fileSize int64, readerBytes int64, config SamplingConfig) int64 {
 	// Simple estimation based on file size and sample density
-	avgBytesPerRecord := fileSize / int64(config.RandomPositions*sampleSize)
+	avgBytesPerRecord := readerBytes / int64(config.SampleSize)
 	estimatedRows := fileSize / avgBytesPerRecord
 	return estimatedRows
 }
