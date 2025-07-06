@@ -496,7 +496,7 @@ func TestSampleRecords(t *testing.T) {
 		RandomPositions: 5,
 	}
 
-	records, err := reader.sampleRecords(file, fileInfo.Size(), config)
+	records, _, err := reader.sampleRecords(file, fileInfo.Size(), config)
 	if err != nil {
 		t.Fatalf("sampleRecords failed: %v", err)
 	}
@@ -517,12 +517,13 @@ func TestEstimateRowCount(t *testing.T) {
 	reader := NewCSVReader(',')
 	config := SamplingConfig{
 		RandomPositions: 5,
+		SampleSize:      100,
 	}
 
-	fileSize := int64(10000)
-	sampleSize := 100
+	fileSize := int64(100000)
+	var readerBytes int64 = 1000
 
-	estimate := reader.estimateRowCount(fileSize, sampleSize, config)
+	estimate := reader.estimateRowCount(fileSize, readerBytes, config)
 
 	// Estimate should be reasonable (non-zero and not negative)
 	if estimate <= 0 {
@@ -530,7 +531,7 @@ func TestEstimateRowCount(t *testing.T) {
 	}
 
 	// Estimate should be proportional to file size
-	estimate2 := reader.estimateRowCount(fileSize*2, sampleSize, config)
+	estimate2 := reader.estimateRowCount(fileSize*2, readerBytes, config)
 	if estimate2 < estimate {
 		t.Errorf("Expected larger estimate for larger file, got %d >= %d", estimate2, estimate)
 	}
