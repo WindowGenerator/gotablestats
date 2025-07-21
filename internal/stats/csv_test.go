@@ -137,7 +137,7 @@ Bob,35,55000`
 		RandomPositions: 5,
 	}
 
-	stats, err := reader.ReadTable(tmpFile, config)
+	stats, err := reader.Stats(tmpFile, config)
 	if err != nil {
 		t.Fatalf("ReadTable failed: %v", err)
 	}
@@ -186,7 +186,7 @@ Charlie,5.8,165.25`
 		RandomPositions: 5,
 	}
 
-	stats, err := reader.ReadTable(tmpFile, config)
+	stats, err := reader.Stats(tmpFile, config)
 	if err != nil {
 		t.Fatalf("ReadTable failed: %v", err)
 	}
@@ -225,9 +225,10 @@ Alice,null,Chicago`
 		MaxFileSize:     1024 * 1024,
 		SampleSize:      1000,
 		RandomPositions: 5,
+		NullValues:      []string{"null", ""},
 	}
 
-	stats, err := reader.ReadTable(tmpFile, config)
+	stats, err := reader.Stats(tmpFile, config)
 	if err != nil {
 		t.Fatalf("ReadTable failed: %v", err)
 	}
@@ -263,7 +264,7 @@ Jane;30;Marketing`
 		RandomPositions: 5,
 	}
 
-	stats, err := reader.ReadTable(tmpFile, config)
+	stats, err := reader.Stats(tmpFile, config)
 	if err != nil {
 		t.Fatalf("ReadTable failed: %v", err)
 	}
@@ -289,7 +290,7 @@ func TestReadTable_EmptyFile(t *testing.T) {
 		RandomPositions: 5,
 	}
 
-	_, err := reader.ReadTable(tmpFile, config)
+	_, err := reader.Stats(tmpFile, config)
 	if err == nil {
 		t.Error("Expected error for empty file")
 	}
@@ -308,7 +309,7 @@ func TestReadTable_HeaderOnly(t *testing.T) {
 		RandomPositions: 5,
 	}
 
-	stats, err := reader.ReadTable(tmpFile, config)
+	stats, err := reader.Stats(tmpFile, config)
 	if err != nil {
 		t.Fatalf("ReadTable failed: %v", err)
 	}
@@ -330,7 +331,7 @@ func TestReadTable_NonExistentFile(t *testing.T) {
 		RandomPositions: 5,
 	}
 
-	_, err := reader.ReadTable("/nonexistent/file.csv", config)
+	_, err := reader.Stats("/nonexistent/file.csv", config)
 	if err == nil {
 		t.Error("Expected error for non-existent file")
 	}
@@ -355,7 +356,7 @@ F,6`
 		RandomPositions: 5,
 	}
 
-	stats, err := reader.ReadTable(tmpFile, config)
+	stats, err := reader.Stats(tmpFile, config)
 	if err != nil {
 		t.Fatalf("ReadTable failed: %v", err)
 	}
@@ -385,7 +386,7 @@ func TestReadTable_LargeFileSampling(t *testing.T) {
 		RandomPositions: 5,
 	}
 
-	stats, err := reader.ReadTable(tmpFile, config)
+	stats, err := reader.Stats(tmpFile, config)
 	if err != nil {
 		t.Fatalf("ReadTable failed: %v", err)
 	}
@@ -420,7 +421,7 @@ Charlie,22,78.5`
 		RandomPositions: 5,
 	}
 
-	stats, err := reader.ReadTable(tmpFile, config)
+	stats, err := reader.Stats(tmpFile, config)
 	if err != nil {
 		t.Fatalf("ReadTable failed: %v", err)
 	}
@@ -459,7 +460,7 @@ func TestAnalyzeColumn_MixedTypes(t *testing.T) {
 		RandomPositions: 5,
 	}
 
-	stats, err := reader.ReadTable(tmpFile, config)
+	stats, err := reader.Stats(tmpFile, config)
 	if err != nil {
 		t.Fatalf("ReadTable failed: %v", err)
 	}
