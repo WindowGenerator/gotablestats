@@ -27,15 +27,14 @@ type TableStats struct {
 	SamplingConfig SamplingConfig
 }
 
-// SamplingConfig controls the sampling behavior
 type SamplingConfig struct {
-	SampleSize      int     // Number of rows to sample
-	RandomPositions int     // Number of random positions to seek to
-	Confidence      float64 // Confidence level for estimates
-	MaxFileSize     int64   // Max file size to process entirely
+	SampleSize      int
+	RandomPositions int
+	Confidence      float64
+	MaxFileSize     int64
+	NullValues      []string
 }
 
-// DefaultSamplingConfig returns sensible defaults
 func DefaultSamplingConfig() SamplingConfig {
 	return SamplingConfig{
 		SampleSize:      1000,
@@ -45,19 +44,16 @@ func DefaultSamplingConfig() SamplingConfig {
 	}
 }
 
-// TableReader defines the strategy interface for reading different table formats
 type TableReader interface {
-	ReadTable(filePath string, config SamplingConfig) (*TableStats, error)
+	Stats(filePath string, config SamplingConfig) (*TableStats, error)
 	GetFormatName() string
 }
 
-// StatisticsGenerator is the context that uses the strategy
 type StatisticsGenerator struct {
 	reader TableReader
 	config SamplingConfig
 }
 
-// NewStatisticsGenerator creates a new statistics generator with a specific reader strategy
 func NewStatisticsGenerator(reader TableReader, config SamplingConfig) *StatisticsGenerator {
 	return &StatisticsGenerator{
 		reader: reader,
@@ -65,12 +61,10 @@ func NewStatisticsGenerator(reader TableReader, config SamplingConfig) *Statisti
 	}
 }
 
-// SetReader allows changing the strategy at runtime
 func (sg *StatisticsGenerator) SetReader(reader TableReader) {
 	sg.reader = reader
 }
 
-// GenerateStats generates statistics using the current reader strategy
 func (sg *StatisticsGenerator) GenerateStats(filePath string) (*TableStats, error) {
-	return sg.reader.ReadTable(filePath, sg.config)
+	return sg.reader.Stats(filePath, sg.config)
 }

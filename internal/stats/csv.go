@@ -7,6 +7,7 @@ import (
 	"io"
 	"math/rand"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -26,7 +27,7 @@ func (r *CSVReader) GetFormatName() string {
 	return "CSV"
 }
 
-func (r *CSVReader) ReadTable(filePath string, config SamplingConfig) (*TableStats, error) {
+func (r *CSVReader) Stats(filePath string, config SamplingConfig) (*TableStats, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
@@ -99,7 +100,7 @@ func (r *CSVReader) ReadTable(filePath string, config SamplingConfig) (*TableSta
 
 	// Analyze each column
 	for colIdx, colName := range stats.ColumnNames {
-		r.analyzeColumn(records, colIdx, colName, stats)
+		r.analyzeColumn(records, colIdx, colName, stats, config.NullValues)
 	}
 
 	return stats, nil
@@ -195,7 +196,7 @@ func toStringComparable(v any) string {
 	}
 }
 
-func (r *CSVReader) analyzeColumn(records [][]string, colIdx int, colName string, stats *TableStats) {
+func (r *CSVReader) analyzeColumn(records [][]string, colIdx int, colName string, stats *TableStats, nullValues []string) {
 	var nullCount int64
 	var minVal, maxVal interface{}
 	var isNumeric bool = true
@@ -209,7 +210,7 @@ func (r *CSVReader) analyzeColumn(records [][]string, colIdx int, colName string
 		}
 
 		value := strings.TrimSpace(record[colIdx])
-		if value == "" || value == "NULL" || value == "null" {
+		if slices.Contains(nullValues, value) {
 			nullCount++
 			continue
 		}

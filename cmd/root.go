@@ -18,6 +18,7 @@ var (
 	positions  int
 	confidence float64
 	maxSize    int64
+	nullValues []string
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -45,6 +46,7 @@ and quality metrics.`,
 			SampleSize:      sampleSize,
 			RandomPositions: positions,
 			Confidence:      confidence,
+			NullValues:      nullValues,
 			MaxFileSize:     maxSize,
 		}
 
@@ -82,6 +84,7 @@ func init() {
 	rootCmd.Flags().IntVarP(&positions, "positions", "p", 5, "Number of random positions")
 	rootCmd.Flags().Float64VarP(&confidence, "confidence", "c", 0.95, "Confidence level (0-1)")
 	rootCmd.Flags().Int64VarP(&maxSize, "max-size", "m", 100*1024*1024, "Max file size for full processing (bytes)")
+	rootCmd.Flags().StringSliceVarP(&nullValues, "nulls", "n", []string{"", "null", "NULL"}, "Comma-separated list of values to treat as NULL/missing")
 
 	// Mark required flags
 	rootCmd.MarkFlagRequired("input")
@@ -120,5 +123,5 @@ func processFile(filePath string, config stats.SamplingConfig) (*stats.TableStat
 		return nil, fmt.Errorf("cannot auto-detect delimiter for %s, unsupported file type", ext)
 	}
 
-	return reader.ReadTable(filePath, config)
+	return reader.Stats(filePath, config)
 }
