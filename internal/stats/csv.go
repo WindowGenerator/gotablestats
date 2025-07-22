@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // CSVReader implements TableReader for CSV files with probabilistic sampling
@@ -199,11 +200,16 @@ func toStringComparable(v any) string {
 func (r *CSVReader) analyzeColumn(records [][]string, colIdx int, colName string, stats *TableStats, nullValues []string) {
 	var nullCount int64
 	var minVal, maxVal interface{}
+
 	var isNumeric bool = true
 	var isFloat bool = false
+	var isDate bool = true
+	var isDateTime bool = true
+	var isBool bool = true
+
 	var numericValues []float64
 
-	for _, record := range records {
+	for idx, record := range records {
 		if colIdx >= len(record) {
 			nullCount++
 			continue
@@ -228,27 +234,54 @@ func (r *CSVReader) analyzeColumn(records [][]string, colIdx int, colName string
 				if maxVal == nil || floatVal > maxVal.(float64) {
 					maxVal = floatVal
 				}
+				continue
 			} else {
+				if idx != 0 {
+					isDate = false
+					isDateTime = false
+					isBool = false
+				}
+
 				isNumeric = false
 				isFloat = false
-				// Switch to string comparison and clear numeric values
-				numericValues = nil
+			}
+		}
+		if isDateTime {
+			if _, err := time.Parse(time.RFC3339, value); err == nil {
+				continue
+			}
+			isDateTime = false
 
-				if minVal == nil || value < toStringComparable(minVal) {
-					minVal = value
-				}
-				if maxVal == nil || value > toStringComparable(maxVal) {
-					maxVal = value
-				}
+			if idx != 0 {
+				isDate = false
+				isBool = false
 			}
-		} else {
-			// String comparison
-			if minVal == nil || value < minVal.(string) {
-				minVal = value
+		}
+
+		if isDate {
+			if _, err := time.Parse(time.DateOnly, value); err == nil {
+				continue
 			}
-			if maxVal == nil || value > maxVal.(string) {
-				maxVal = value
+			isDate = false
+
+			if idx != 0 {
+				isBool = false
 			}
+		}
+
+		if isBool {
+			if boolValue := strings.ToLower(value); boolValue == "true" || boolValue == "false" {
+				continue
+			}
+			isBool = false
+		}
+
+		// String comparison
+		if minVal == nil || value < toStringComparable(minVal) {
+			minVal = value
+		}
+		if maxVal == nil || value > toStringComparable(maxVal) {
+			maxVal = value
 		}
 	}
 
@@ -264,6 +297,12 @@ func (r *CSVReader) analyzeColumn(records [][]string, colIdx int, colName string
 		if len(numericValues) > 0 {
 			stats.Aggregates[colName] = calculateAggregates(numericValues)
 		}
+	} else if isDateTime {
+		stats.ColumnTypes[colName] = "datetime"
+	} else if isDate {
+		stats.ColumnTypes[colName] = "date"
+	} else if isBool {
+		stats.ColumnTypes[colName] = "bool"
 	} else {
 		stats.ColumnTypes[colName] = "string"
 	}
