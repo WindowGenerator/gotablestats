@@ -210,6 +210,62 @@ Charlie,5.8,165.25`
 	}
 }
 
+func TestReadTable_WithDate(t *testing.T) {
+	csvContent := `name,datetime,date
+Alice,1937-01-01T12:00:27.87+00:20,1902-05-19
+Bob,1990-12-31T15:59:00-08:00,2007-03-12
+Charlie,1996-12-19T16:39:57-08:00,2011-11-02`
+
+	tmpFile := createTempCSV(t, csvContent, ',')
+	defer os.Remove(tmpFile)
+
+	reader := NewCSVReader(',')
+	config := SamplingConfig{
+		MaxFileSize:     1024 * 1024,
+		SampleSize:      1000,
+		RandomPositions: 5,
+	}
+
+	stats, err := reader.Stats(tmpFile, config)
+	if err != nil {
+		t.Fatalf("ReadTable failed: %v", err)
+	}
+
+	if stats.ColumnTypes["datetime"] != "datetime" {
+		t.Errorf("Expected datetime column to be datetime, got %s", stats.ColumnTypes["datetime"])
+	}
+
+	if stats.ColumnTypes["date"] != "date" {
+		t.Errorf("Expected date column to be date, got %s", stats.ColumnTypes["date"])
+	}
+}
+
+func TestReadTable_WithBool(t *testing.T) {
+	csvContent := `name,done
+Alice,true
+Bob,false
+Charlie,true`
+
+	tmpFile := createTempCSV(t, csvContent, ',')
+	defer os.Remove(tmpFile)
+
+	reader := NewCSVReader(',')
+	config := SamplingConfig{
+		MaxFileSize:     1024 * 1024,
+		SampleSize:      1000,
+		RandomPositions: 5,
+	}
+
+	stats, err := reader.Stats(tmpFile, config)
+	if err != nil {
+		t.Fatalf("ReadTable failed: %v", err)
+	}
+
+	if stats.ColumnTypes["done"] != "bool" {
+		t.Errorf("Expected done column to be bool, got %s", stats.ColumnTypes["done"])
+	}
+}
+
 func TestReadTable_WithNulls(t *testing.T) {
 	csvContent := `name,age,city
 John,25,NYC
@@ -445,10 +501,12 @@ Charlie,22,78.5`
 
 func TestAnalyzeColumn_MixedTypes(t *testing.T) {
 	// Column starts as numeric but has non-numeric values
-	csvContent := `id,mixed_col
-1,123
-2,456
-3,abc`
+	csvContent := `id,mixed_col,mixed_col2
+1,123,33.4
+2,456,442
+3,abc,1990-12-31T15:59:00-08:00
+4,1990-12-31T15:59:00-08:00,1990-12-31
+5,123,true`
 
 	tmpFile := createTempCSV(t, csvContent, ',')
 	defer os.Remove(tmpFile)
@@ -470,8 +528,16 @@ func TestAnalyzeColumn_MixedTypes(t *testing.T) {
 		t.Errorf("Expected mixed_col to be string, got %s", stats.ColumnTypes["mixed_col"])
 	}
 
+	if stats.ColumnTypes["mixed_col2"] != "string" {
+		t.Errorf("Expected mixed_col2 to be string, got %s", stats.ColumnTypes["mixed_col2"])
+	}
+
 	// Should not have aggregates for string columns
 	if stats.Aggregates["mixed_col"] != nil {
+		t.Error("Expected no aggregates for string column")
+	}
+
+	if stats.Aggregates["mixed_col2"] != nil {
 		t.Error("Expected no aggregates for string column")
 	}
 }
