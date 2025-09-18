@@ -1,17 +1,20 @@
-package stats
+package gather
 
 import (
 	"encoding/csv"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/WindowGenerator/gotablestats/internal/stat"
 )
 
 // Test helper functions
 
-func createTempCSV(t *testing.T, content string, delimiter rune) string {
+func createTempCSV(t *testing.T, content string, delimiter rune) *os.File {
 	tmpDir := t.TempDir()
 	tmpFile := filepath.Join(tmpDir, "test.csv")
 
@@ -19,7 +22,6 @@ func createTempCSV(t *testing.T, content string, delimiter rune) string {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer file.Close()
 
 	writer := csv.NewWriter(file)
 	writer.Comma = delimiter
@@ -32,8 +34,9 @@ func createTempCSV(t *testing.T, content string, delimiter rune) string {
 		}
 	}
 	writer.Flush()
+	file.Seek(0, io.SeekStart)
 
-	return tmpFile
+	return file
 }
 
 func splitLines(content string) []string {
@@ -68,7 +71,7 @@ func splitCSVLine(line string, delimiter rune) []string {
 	return fields
 }
 
-func createLargeCSV(t *testing.T, rows int) string {
+func createLargeCSV(t *testing.T, rows int) *os.File {
 	tmpDir := t.TempDir()
 	tmpFile := filepath.Join(tmpDir, "large.csv")
 
@@ -76,7 +79,6 @@ func createLargeCSV(t *testing.T, rows int) string {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer file.Close()
 
 	writer := csv.NewWriter(file)
 
@@ -93,29 +95,23 @@ func createLargeCSV(t *testing.T, rows int) string {
 		})
 	}
 	writer.Flush()
+	file.Seek(0, io.SeekStart)
 
-	return tmpFile
+	return file
 }
 
-// Tests for NewCSVReader
+// Tests for NewCSVStatsGatherer
 
-func TestNewCSVReader(t *testing.T) {
-	reader := NewCSVReader(',')
+func TestNewCSVStatsGatherer(t *testing.T) {
+	reader := NewCSVStatsGatherer(',')
 
 	if reader.Delimiter != ',' {
 		t.Errorf("Expected delimiter ',', got %c", reader.Delimiter)
 	}
 
-	reader2 := NewCSVReader(';')
+	reader2 := NewCSVStatsGatherer(';')
 	if reader2.Delimiter != ';' {
 		t.Errorf("Expected delimiter ';', got %c", reader2.Delimiter)
-	}
-}
-
-func TestGetFormatName(t *testing.T) {
-	reader := NewCSVReader(',')
-	if reader.GetFormatName() != "CSV" {
-		t.Errorf("Expected format name 'CSV', got %s", reader.GetFormatName())
 	}
 }
 
@@ -128,10 +124,10 @@ Jane,30,60000
 Bob,35,55000`
 
 	tmpFile := createTempCSV(t, csvContent, ',')
-	defer os.Remove(tmpFile)
+	defer tmpFile.Close()
 
-	reader := NewCSVReader(',')
-	config := SamplingConfig{
+	reader := NewCSVStatsGatherer(',')
+	config := stat.SamplingConfig{
 		MaxFileSize:     1024 * 1024, // 1MB
 		SampleSize:      1000,
 		RandomPositions: 5,
@@ -157,16 +153,16 @@ Bob,35,55000`
 	}
 
 	// Check column types
-	if stats.ColumnTypes["name"] != "string" {
-		t.Errorf("Expected name column to be string, got %s", stats.ColumnTypes["name"])
+	if stats.ColumnsStats["name"].Type != "string" {
+		t.Errorf("Expected name column to be string, got %s", stats.ColumnsStats["name"].Type)
 	}
 
-	if stats.ColumnTypes["age"] != "int64" {
-		t.Errorf("Expected age column to be int64, got %s", stats.ColumnTypes["age"])
+	if stats.ColumnsStats["age"].Type != "int64" {
+		t.Errorf("Expected age column to be int64, got %s", stats.ColumnsStats["age"].Type)
 	}
 
-	if stats.ColumnTypes["salary"] != "int64" {
-		t.Errorf("Expected salary column to be int64, got %s", stats.ColumnTypes["salary"])
+	if stats.ColumnsStats["salary"].Type != "int64" {
+		t.Errorf("Expected salary column to be int64, got %s", stats.ColumnsStats["salary"].Type)
 	}
 }
 
@@ -177,10 +173,10 @@ Bob,6.0,180.0
 Charlie,5.8,165.25`
 
 	tmpFile := createTempCSV(t, csvContent, ',')
-	defer os.Remove(tmpFile)
+	defer tmpFile.Close()
 
-	reader := NewCSVReader(',')
-	config := SamplingConfig{
+	reader := NewCSVStatsGatherer(',')
+	config := stat.SamplingConfig{
 		MaxFileSize:     1024 * 1024,
 		SampleSize:      1000,
 		RandomPositions: 5,
@@ -192,20 +188,20 @@ Charlie,5.8,165.25`
 	}
 
 	// Check float column types
-	if stats.ColumnTypes["height"] != "float64" {
-		t.Errorf("Expected height column to be float64, got %s", stats.ColumnTypes["height"])
+	if stats.ColumnsStats["height"].Type != "float64" {
+		t.Errorf("Expected height column to be float64, got %s", stats.ColumnsStats["height"].Type)
 	}
 
-	if stats.ColumnTypes["weight"] != "float64" {
-		t.Errorf("Expected weight column to be float64, got %s", stats.ColumnTypes["weight"])
+	if stats.ColumnsStats["weight"].Type != "float64" {
+		t.Errorf("Expected weight column to be float64, got %s", stats.ColumnsStats["weight"].Type)
 	}
 
 	// Check aggregates exist for numeric columns
-	if stats.Aggregates["height"] == nil {
+	if stats.ColumnsStats["height"].Aggregate == nil {
 		t.Error("Expected aggregates for height column")
 	}
 
-	if stats.Aggregates["weight"] == nil {
+	if stats.ColumnsStats["weight"].Aggregate == nil {
 		t.Error("Expected aggregates for weight column")
 	}
 }
@@ -217,10 +213,10 @@ Bob,1990-12-31T15:59:00-08:00,2007-03-12
 Charlie,1996-12-19T16:39:57-08:00,2011-11-02`
 
 	tmpFile := createTempCSV(t, csvContent, ',')
-	defer os.Remove(tmpFile)
+	defer tmpFile.Close()
 
-	reader := NewCSVReader(',')
-	config := SamplingConfig{
+	reader := NewCSVStatsGatherer(',')
+	config := stat.SamplingConfig{
 		MaxFileSize:     1024 * 1024,
 		SampleSize:      1000,
 		RandomPositions: 5,
@@ -231,12 +227,12 @@ Charlie,1996-12-19T16:39:57-08:00,2011-11-02`
 		t.Fatalf("ReadTable failed: %v", err)
 	}
 
-	if stats.ColumnTypes["datetime"] != "datetime" {
-		t.Errorf("Expected datetime column to be datetime, got %s", stats.ColumnTypes["datetime"])
+	if stats.ColumnsStats["datetime"].Type != "datetime" {
+		t.Errorf("Expected datetime column to be datetime, got %s", stats.ColumnsStats["datetime"].Type)
 	}
 
-	if stats.ColumnTypes["date"] != "date" {
-		t.Errorf("Expected date column to be date, got %s", stats.ColumnTypes["date"])
+	if stats.ColumnsStats["date"].Type != "date" {
+		t.Errorf("Expected date column to be date, got %s", stats.ColumnsStats["date"].Type)
 	}
 }
 
@@ -247,10 +243,10 @@ Bob,false
 Charlie,true`
 
 	tmpFile := createTempCSV(t, csvContent, ',')
-	defer os.Remove(tmpFile)
+	defer tmpFile.Close()
 
-	reader := NewCSVReader(',')
-	config := SamplingConfig{
+	reader := NewCSVStatsGatherer(',')
+	config := stat.SamplingConfig{
 		MaxFileSize:     1024 * 1024,
 		SampleSize:      1000,
 		RandomPositions: 5,
@@ -261,8 +257,8 @@ Charlie,true`
 		t.Fatalf("ReadTable failed: %v", err)
 	}
 
-	if stats.ColumnTypes["done"] != "bool" {
-		t.Errorf("Expected done column to be bool, got %s", stats.ColumnTypes["done"])
+	if stats.ColumnsStats["done"].Type != "bool" {
+		t.Errorf("Expected done column to be bool, got %s", stats.ColumnsStats["done"].Type)
 	}
 }
 
@@ -274,10 +270,10 @@ Bob,35,
 Alice,null,Chicago`
 
 	tmpFile := createTempCSV(t, csvContent, ',')
-	defer os.Remove(tmpFile)
+	defer tmpFile.Close()
 
-	reader := NewCSVReader(',')
-	config := SamplingConfig{
+	reader := NewCSVStatsGatherer(',')
+	config := stat.SamplingConfig{
 		MaxFileSize:     1024 * 1024,
 		SampleSize:      1000,
 		RandomPositions: 5,
@@ -290,18 +286,18 @@ Alice,null,Chicago`
 	}
 
 	// Check null counts
-	if stats.NullCounts["age"] != 2 { // Jane and Alice
-		t.Errorf("Expected 2 nulls in age column, got %d", stats.NullCounts["age"])
+	if stats.ColumnsStats["age"].NullCount != 2 { // Jane and Alice
+		t.Errorf("Expected 2 nulls in age column, got %d", stats.ColumnsStats["age"].NullCount)
 	}
 
-	if stats.NullCounts["city"] != 1 { // Bob
-		t.Errorf("Expected 1 null in city column, got %d", stats.NullCounts["city"])
+	if stats.ColumnsStats["city"].NullCount != 1 { // Bob
+		t.Errorf("Expected 1 null in city column, got %d", stats.ColumnsStats["city"].NullCount)
 	}
 
 	// Check null percentages
 	expectedAgeNullPct := 50.0 // 2 out of 4 rows
-	if stats.NullPercentage["age"] != expectedAgeNullPct {
-		t.Errorf("Expected %.1f%% nulls in age, got %.1f%%", expectedAgeNullPct, stats.NullPercentage["age"])
+	if stats.ColumnsStats["age"].NullPercentage != expectedAgeNullPct {
+		t.Errorf("Expected %.1f%% nulls in age, got %.1f%%", expectedAgeNullPct, stats.ColumnsStats["age"].NullPercentage)
 	}
 }
 
@@ -311,10 +307,10 @@ John;25;Engineering
 Jane;30;Marketing`
 
 	tmpFile := createTempCSV(t, csvContent, ';')
-	defer os.Remove(tmpFile)
+	defer tmpFile.Close()
 
-	reader := NewCSVReader(';')
-	config := SamplingConfig{
+	reader := NewCSVStatsGatherer(';')
+	config := stat.SamplingConfig{
 		MaxFileSize:     1024 * 1024,
 		SampleSize:      1000,
 		RandomPositions: 5,
@@ -337,10 +333,10 @@ Jane;30;Marketing`
 
 func TestReadTable_EmptyFile(t *testing.T) {
 	tmpFile := createTempCSV(t, "", ',')
-	defer os.Remove(tmpFile)
+	defer tmpFile.Close()
 
-	reader := NewCSVReader(',')
-	config := SamplingConfig{
+	reader := NewCSVStatsGatherer(',')
+	config := stat.SamplingConfig{
 		MaxFileSize:     1024 * 1024,
 		SampleSize:      1000,
 		RandomPositions: 5,
@@ -356,10 +352,9 @@ func TestReadTable_HeaderOnly(t *testing.T) {
 	csvContent := `name,age,city`
 
 	tmpFile := createTempCSV(t, csvContent, ',')
-	defer os.Remove(tmpFile)
 
-	reader := NewCSVReader(',')
-	config := SamplingConfig{
+	reader := NewCSVStatsGatherer(',')
+	config := stat.SamplingConfig{
 		MaxFileSize:     1024 * 1024,
 		SampleSize:      1000,
 		RandomPositions: 5,
@@ -379,20 +374,6 @@ func TestReadTable_HeaderOnly(t *testing.T) {
 	}
 }
 
-func TestReadTable_NonExistentFile(t *testing.T) {
-	reader := NewCSVReader(',')
-	config := SamplingConfig{
-		MaxFileSize:     1024 * 1024,
-		SampleSize:      1000,
-		RandomPositions: 5,
-	}
-
-	_, err := reader.Stats("/nonexistent/file.csv", config)
-	if err == nil {
-		t.Error("Expected error for non-existent file")
-	}
-}
-
 func TestReadTable_SampleData(t *testing.T) {
 	csvContent := `name,value
 A,1
@@ -403,10 +384,10 @@ E,5
 F,6`
 
 	tmpFile := createTempCSV(t, csvContent, ',')
-	defer os.Remove(tmpFile)
+	defer tmpFile.Close()
 
-	reader := NewCSVReader(',')
-	config := SamplingConfig{
+	reader := NewCSVStatsGatherer(',')
+	config := stat.SamplingConfig{
 		MaxFileSize:     1024 * 1024,
 		SampleSize:      1000,
 		RandomPositions: 5,
@@ -433,10 +414,10 @@ F,6`
 func TestReadTable_LargeFileSampling(t *testing.T) {
 	// Create a file larger than MaxFileSize to trigger sampling
 	tmpFile := createLargeCSV(t, 10000)
-	defer os.Remove(tmpFile)
+	defer tmpFile.Close()
 
-	reader := NewCSVReader(',')
-	config := SamplingConfig{
+	reader := NewCSVStatsGatherer(',')
+	config := stat.SamplingConfig{
 		MaxFileSize:     1000, // Very small to force sampling
 		SampleSize:      100,
 		RandomPositions: 5,
@@ -468,10 +449,10 @@ Bob,30,92.0
 Charlie,22,78.5`
 
 	tmpFile := createTempCSV(t, csvContent, ',')
-	defer os.Remove(tmpFile)
+	defer tmpFile.Close()
 
-	reader := NewCSVReader(',')
-	config := SamplingConfig{
+	reader := NewCSVStatsGatherer(',')
+	config := stat.SamplingConfig{
 		MaxFileSize:     1024 * 1024,
 		SampleSize:      1000,
 		RandomPositions: 5,
@@ -483,19 +464,19 @@ Charlie,22,78.5`
 	}
 
 	// Check min/max for string column
-	if stats.MinValues["name"] != "Alice" {
-		t.Errorf("Expected min name 'Alice', got %v", stats.MinValues["name"])
+	if stats.ColumnsStats["name"].MinValue != "Alice" {
+		t.Errorf("Expected min name 'Alice', got %v", stats.ColumnsStats["name"].MinValue)
 	}
-	if stats.MaxValues["name"] != "Charlie" {
-		t.Errorf("Expected max name 'Charlie', got %v", stats.MaxValues["name"])
+	if stats.ColumnsStats["name"].MaxValue != "Charlie" {
+		t.Errorf("Expected max name 'Charlie', got %v", stats.ColumnsStats["name"].MaxValue)
 	}
 
 	// Check min/max for numeric columns
-	if stats.MinValues["age"] != float64(22) {
-		t.Errorf("Expected min age 22, got %v", stats.MinValues["age"])
+	if stats.ColumnsStats["age"].MinValue != float64(22) {
+		t.Errorf("Expected min age 22, got %v", stats.ColumnsStats["age"].MinValue)
 	}
-	if stats.MaxValues["age"] != float64(30) {
-		t.Errorf("Expected max age 30, got %v", stats.MaxValues["age"])
+	if stats.ColumnsStats["age"].MaxValue != float64(30) {
+		t.Errorf("Expected max age 30, got %v", stats.ColumnsStats["age"].MaxValue)
 	}
 }
 
@@ -509,10 +490,10 @@ func TestAnalyzeColumn_MixedTypes(t *testing.T) {
 5,123,true`
 
 	tmpFile := createTempCSV(t, csvContent, ',')
-	defer os.Remove(tmpFile)
+	defer tmpFile.Close()
 
-	reader := NewCSVReader(',')
-	config := SamplingConfig{
+	reader := NewCSVStatsGatherer(',')
+	config := stat.SamplingConfig{
 		MaxFileSize:     1024 * 1024,
 		SampleSize:      1000,
 		RandomPositions: 5,
@@ -524,20 +505,20 @@ func TestAnalyzeColumn_MixedTypes(t *testing.T) {
 	}
 
 	// Mixed column should be treated as string
-	if stats.ColumnTypes["mixed_col"] != "string" {
-		t.Errorf("Expected mixed_col to be string, got %s", stats.ColumnTypes["mixed_col"])
+	if stats.ColumnsStats["mixed_col"].Type != "string" {
+		t.Errorf("Expected mixed_col to be string, got %s", stats.ColumnsStats["mixed_col"].Type)
 	}
 
-	if stats.ColumnTypes["mixed_col2"] != "string" {
-		t.Errorf("Expected mixed_col2 to be string, got %s", stats.ColumnTypes["mixed_col2"])
+	if stats.ColumnsStats["mixed_col2"].Type != "string" {
+		t.Errorf("Expected mixed_col2 to be string, got %s", stats.ColumnsStats["mixed_col2"].Type)
 	}
 
 	// Should not have aggregates for string columns
-	if stats.Aggregates["mixed_col"] != nil {
+	if stats.ColumnsStats["mixed_col"].Aggregate != nil {
 		t.Error("Expected no aggregates for string column")
 	}
 
-	if stats.Aggregates["mixed_col2"] != nil {
+	if stats.ColumnsStats["mixed_col2"].Aggregate != nil {
 		t.Error("Expected no aggregates for string column")
 	}
 }
@@ -547,23 +528,17 @@ func TestAnalyzeColumn_MixedTypes(t *testing.T) {
 func TestSampleRecords(t *testing.T) {
 	// Create a reasonably sized file
 	tmpFile := createLargeCSV(t, 1000)
-	defer os.Remove(tmpFile)
+	defer tmpFile.Close()
 
-	file, err := os.Open(tmpFile)
-	if err != nil {
-		t.Fatalf("Failed to open file: %v", err)
-	}
-	defer file.Close()
+	fileInfo, _ := tmpFile.Stat()
 
-	fileInfo, _ := file.Stat()
-
-	reader := NewCSVReader(',')
-	config := SamplingConfig{
+	reader := NewCSVStatsGatherer(',')
+	config := stat.SamplingConfig{
 		SampleSize:      50,
 		RandomPositions: 5,
 	}
 
-	records, _, err := reader.sampleRecords(file, fileInfo.Size(), config)
+	records, _, err := reader.sampleRecords(tmpFile, fileInfo.Size(), config)
 	if err != nil {
 		t.Fatalf("sampleRecords failed: %v", err)
 	}
@@ -581,8 +556,8 @@ func TestSampleRecords(t *testing.T) {
 }
 
 func TestEstimateRowCount(t *testing.T) {
-	reader := NewCSVReader(',')
-	config := SamplingConfig{
+	reader := NewCSVStatsGatherer(',')
+	config := stat.SamplingConfig{
 		RandomPositions: 5,
 		SampleSize:      100,
 	}

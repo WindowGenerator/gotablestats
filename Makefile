@@ -18,7 +18,7 @@ test: reports ## Run the unit tests
 coverage: ## Create coverage report
 	$(info [+] Running code coverage)
 	go tool cover -html=reports/coverage.out -o reports/coverage.html
-	open reports/coverage.html
+	echo "Check reports here: ./reports/coverage.html"
 
 .PHONY: complexity
 complexity: gocognit ## Check codebase for complexity

@@ -1,24 +1,22 @@
-package stats
+package gather
 
 import (
-	"bytes"
-	"io"
 	"math"
-	"os"
-	"strings"
 	"testing"
+
+	"github.com/WindowGenerator/gotablestats/internal/stat"
 )
 
 func TestCalculateAggregates(t *testing.T) {
 	tests := []struct {
 		name     string
 		values   []float64
-		expected *AggregateStats
+		expected *stat.AggregateStats
 	}{
 		{
 			name:   "empty slice",
 			values: []float64{},
-			expected: &AggregateStats{
+			expected: &stat.AggregateStats{
 				Count:       0,
 				Sum:         0,
 				Mean:        0,
@@ -31,7 +29,7 @@ func TestCalculateAggregates(t *testing.T) {
 		{
 			name:   "single value",
 			values: []float64{5.0},
-			expected: &AggregateStats{
+			expected: &stat.AggregateStats{
 				Count:    1,
 				Sum:      5.0,
 				Mean:     5.0,
@@ -51,7 +49,7 @@ func TestCalculateAggregates(t *testing.T) {
 		{
 			name:   "basic case",
 			values: []float64{1.0, 2.0, 3.0, 4.0, 5.0},
-			expected: &AggregateStats{
+			expected: &stat.AggregateStats{
 				Count:    5,
 				Sum:      15.0,
 				Mean:     3.0,
@@ -71,7 +69,7 @@ func TestCalculateAggregates(t *testing.T) {
 		{
 			name:   "unsorted values",
 			values: []float64{5.0, 1.0, 3.0, 2.0, 4.0},
-			expected: &AggregateStats{
+			expected: &stat.AggregateStats{
 				Count:    5,
 				Sum:      15.0,
 				Mean:     3.0,
@@ -91,7 +89,7 @@ func TestCalculateAggregates(t *testing.T) {
 		{
 			name:   "duplicate values",
 			values: []float64{2.0, 2.0, 2.0, 2.0},
-			expected: &AggregateStats{
+			expected: &stat.AggregateStats{
 				Count:    4,
 				Sum:      8.0,
 				Mean:     2.0,
@@ -111,7 +109,7 @@ func TestCalculateAggregates(t *testing.T) {
 		{
 			name:   "negative values",
 			values: []float64{-2.0, -1.0, 0.0, 1.0, 2.0},
-			expected: &AggregateStats{
+			expected: &stat.AggregateStats{
 				Count:    5,
 				Sum:      0.0,
 				Mean:     0.0,
@@ -249,184 +247,6 @@ func TestCalculatePercentile(t *testing.T) {
 					tt.values, tt.percentile, result, tt.expected)
 			}
 		})
-	}
-}
-
-func TestPrintStats(t *testing.T) {
-	// Create a sample TableStats struct
-	stats := &TableStats{
-		RowCount:      1000,
-		EstimatedRows: 5000,
-		ColumnCount:   3,
-		ColumnNames:   []string{"id", "name", "age"},
-		ColumnTypes: map[string]string{
-			"id":   "integer",
-			"name": "string",
-			"age":  "float",
-		},
-		NullCounts: map[string]int64{
-			"id":   0,
-			"name": 10,
-			"age":  5,
-		},
-		NullPercentage: map[string]float64{
-			"id":   0.0,
-			"name": 1.0,
-			"age":  0.5,
-		},
-		MinValues: map[string]interface{}{
-			"id":   1,
-			"name": "Alice",
-			"age":  18.5,
-		},
-		MaxValues: map[string]interface{}{
-			"id":   1000,
-			"name": "Zoe",
-			"age":  65.2,
-		},
-		Aggregates: map[string]*AggregateStats{
-			"age": {
-				Count:    995,
-				Sum:      25000.0,
-				Mean:     25.13,
-				Median:   24.5,
-				StdDev:   12.5,
-				Variance: 156.25,
-				Percentiles: map[int]float64{
-					25: 20.0,
-					50: 24.5,
-					75: 30.0,
-					90: 40.0,
-					95: 45.0,
-					99: 50.0,
-				},
-			},
-		},
-		SampleData: [][]string{
-			{"1", "Alice", "25.5"},
-			{"2", "Bob", "30.0"},
-			{"3", "Charlie", "22.3"},
-		},
-	}
-
-	// Capture stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	// Call the function
-	PrintStats(stats, "CSV")
-
-	// Restore stdout and get output
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	output := buf.String()
-
-	// Test various parts of the output
-	expectedStrings := []string{
-		"=== CSV File Statistics ===",
-		"Sampled Rows: 1000",
-		"Estimated Total Rows: 5000",
-		"Columns: 3",
-		"Column Names: [id name age]",
-		"id:",
-		"Type: integer",
-		"name:",
-		"Type: string",
-		"age:",
-		"Type: float",
-		"Null Count: 0 (0.00%)",
-		"Null Count: 10 (1.00%)",
-		"Null Count: 5 (0.50%)",
-		"Min: 1",
-		"Max: 1000",
-		"Min: Alice",
-		"Max: Zoe",
-		"Min: 18.5",
-		"Max: 65.2",
-		"Aggregates:",
-		"Count: 995",
-		"Sum: 25000.00",
-		"Mean: 25.13",
-		"Median: 24.50",
-		"Std Dev: 12.50",
-		"Percentiles: 25th=20.00, 75th=30.00, 95th=45.00, 99th=50.00",
-		"Sample Data:",
-		"Row 1: [1 Alice 25.5]",
-		"Row 2: [2 Bob 30.0]",
-		"Row 3: [3 Charlie 22.3]",
-	}
-
-	for _, expected := range expectedStrings {
-		if !strings.Contains(output, expected) {
-			t.Errorf("Output should contain '%s', but it doesn't.\nFull output:\n%s", expected, output)
-		}
-	}
-}
-
-func TestPrintStatsWithoutAggregatesAndSampleData(t *testing.T) {
-	// Test with minimal data
-	stats := &TableStats{
-		RowCount:      100,
-		EstimatedRows: 100,
-		ColumnCount:   1,
-		ColumnNames:   []string{"name"},
-		ColumnTypes: map[string]string{
-			"name": "string",
-		},
-		NullCounts: map[string]int64{
-			"name": 0,
-		},
-		NullPercentage: map[string]float64{
-			"name": 0.0,
-		},
-		MinValues: map[string]interface{}{
-			"name": "Alice",
-		},
-		MaxValues: map[string]interface{}{
-			"name": "Zoe",
-		},
-		Aggregates: map[string]*AggregateStats{}, // Empty
-		SampleData: [][]string{},                 // Empty
-	}
-
-	// Capture stdout
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	PrintStats(stats, "JSON")
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	output := buf.String()
-
-	// Should not contain aggregate or sample data sections
-	if strings.Contains(output, "Aggregates:") {
-		t.Error("Output should not contain 'Aggregates:' section when no aggregates exist")
-	}
-	if strings.Contains(output, "Sample Data:") {
-		t.Error("Output should not contain 'Sample Data:' section when no sample data exists")
-	}
-
-	// Should contain basic info
-	expectedStrings := []string{
-		"=== JSON File Statistics ===",
-		"Sampled Rows: 100",
-		"name:",
-		"Type: string",
-	}
-
-	for _, expected := range expectedStrings {
-		if !strings.Contains(output, expected) {
-			t.Errorf("Output should contain '%s'", expected)
-		}
 	}
 }
 

@@ -8,12 +8,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/WindowGenerator/gotablestats/internal/stats"
+	"github.com/WindowGenerator/gotablestats/internal/gather"
+	"github.com/WindowGenerator/gotablestats/internal/save"
+	"github.com/WindowGenerator/gotablestats/internal/save/formatters"
+	"github.com/WindowGenerator/gotablestats/internal/stat"
 	"github.com/spf13/cobra"
 )
 
 var (
 	inputFile  string
+	outputFile string
+	format     string
 	sampleSize int
 	positions  int
 	confidence float64
@@ -42,7 +47,7 @@ and quality metrics.`,
 		}
 
 		// Create config from CLI args
-		config := stats.SamplingConfig{
+		config := stat.SamplingConfig{
 			SampleSize:      sampleSize,
 			RandomPositions: positions,
 			Confidence:      confidence,
@@ -64,7 +69,14 @@ and quality metrics.`,
 		processTime := time.Since(start).String()
 		log.Printf("Process time: %v", processTime)
 
-		stats.PrintStats(stats_, "")
+		err = saveStats(
+			outputFile,
+			format,
+			stats_,
+		)
+		if err != nil {
+			log.Fatal(err)
+		}
 	},
 }
 
@@ -80,6 +92,8 @@ func Execute() {
 func init() {
 	// Define flags
 	rootCmd.Flags().StringVarP(&inputFile, "input", "i", "", "Input file (CSV or TSV) (required)")
+	rootCmd.Flags().StringVarP(&outputFile, "output", "o", "", "Output file")
+	rootCmd.Flags().StringVarP(&format, "format", "f", "text", "Output format")
 	rootCmd.Flags().IntVarP(&sampleSize, "sample-size", "s", 1000, "Number of rows to sample")
 	rootCmd.Flags().IntVarP(&positions, "positions", "p", 5, "Number of random positions")
 	rootCmd.Flags().Float64VarP(&confidence, "confidence", "c", 0.95, "Confidence level (0-1)")
@@ -90,7 +104,7 @@ func init() {
 	rootCmd.MarkFlagRequired("input")
 }
 
-func validateConfig(config stats.SamplingConfig) error {
+func validateConfig(config stat.SamplingConfig) error {
 	if config.SampleSize <= 0 {
 		return fmt.Errorf("sample size must be positive")
 	}
@@ -103,25 +117,61 @@ func validateConfig(config stats.SamplingConfig) error {
 	return nil
 }
 
-func processFile(filePath string, config stats.SamplingConfig) (*stats.TableStats, error) {
+func processFile(filePath string, config stat.SamplingConfig) (*stat.TableStats, error) {
 	_, err := os.Stat(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("cannot access file: %v", err)
 	}
 
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
 	ext := strings.ToLower(filepath.Ext(filePath))
-	var reader stats.TableReader
+	var reader gather.StatsGatherer
 
 	switch ext {
 	case ".csv":
-		reader = &stats.CSVReader{
-			Delimiter: ',',
-		}
+		reader = gather.NewCSVStatsGatherer(',')
 	case ".tsv":
-		reader = &stats.TSVReader{}
+		reader = gather.NewCSVStatsGatherer('\t')
+	case ".parquet":
+		reader = gather.NewParquetReader()
+
 	default:
 		return nil, fmt.Errorf("cannot auto-detect delimiter for %s, unsupported file type", ext)
 	}
 
-	return reader.Stats(filePath, config)
+	return reader.Stats(file, config)
+}
+
+func saveStats(filePath string, format string, stats *stat.TableStats) error {
+	var formatter save.StatsFormatter
+	var saver save.StatsSaver
+
+	saveFormat := (save.SaveFormat)(format)
+
+	switch saveFormat {
+	case save.SaveFormatText:
+		formatter = formatters.NewTextFormatter()
+	case save.SaveFormatJson:
+		formatter = formatters.NewJsonFormatter()
+	default:
+		return fmt.Errorf("there is no such formatter %s, for output statistics", format)
+	}
+
+	if filePath == "" {
+		saver = save.NewStdoutSaver(formatter)
+	} else {
+		file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to open file: %w", err)
+		}
+		defer file.Close()
+		saver = save.NewFileSaver(file, formatter)
+	}
+
+	return saver.Save(stats)
 }

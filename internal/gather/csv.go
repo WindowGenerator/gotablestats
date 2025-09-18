@@ -1,4 +1,4 @@
-package stats
+package gather
 
 import (
 	"bufio"
@@ -11,30 +11,22 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/WindowGenerator/gotablestats/internal/stat"
 )
 
-// CSVReader implements TableReader for CSV files with probabilistic sampling
-type CSVReader struct {
+// CSVStatsGatherer implements TableReader for CSV files with probabilistic sampling
+type CSVStatsGatherer struct {
 	Delimiter rune
 }
 
-func NewCSVReader(delimiter rune) *CSVReader {
-	return &CSVReader{
+func NewCSVStatsGatherer(delimiter rune) *CSVStatsGatherer {
+	return &CSVStatsGatherer{
 		Delimiter: delimiter,
 	}
 }
 
-func (r *CSVReader) GetFormatName() string {
-	return "CSV"
-}
-
-func (r *CSVReader) Stats(filePath string, config SamplingConfig) (*TableStats, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %w", err)
-	}
-	defer file.Close()
-
+func (r *CSVStatsGatherer) Stats(file *os.File, config stat.SamplingConfig) (*stat.TableStats, error) {
 	// Get file size
 	fileInfo, err := file.Stat()
 	if err != nil {
@@ -51,17 +43,11 @@ func (r *CSVReader) Stats(filePath string, config SamplingConfig) (*TableStats, 
 		return nil, fmt.Errorf("failed to read header: %w", err)
 	}
 
-	stats := &TableStats{
-		ColumnCount:    len(header),
-		ColumnNames:    header,
-		ColumnTypes:    make(map[string]string),
-		NullCounts:     make(map[string]int64),
-		NullPercentage: make(map[string]float64),
-		MinValues:      make(map[string]interface{}),
-		MaxValues:      make(map[string]interface{}),
-		SampleData:     make([][]string, 0),
-		Aggregates:     make(map[string]*AggregateStats),
-		SamplingConfig: config,
+	stats := &stat.TableStats{
+		ColumnCount:  len(header),
+		ColumnNames:  header,
+		ColumnsStats: make(map[string]*stat.ColumnStats),
+		SampleData:   make([][]string, 0),
 	}
 
 	var records [][]string
@@ -101,13 +87,14 @@ func (r *CSVReader) Stats(filePath string, config SamplingConfig) (*TableStats, 
 
 	// Analyze each column
 	for colIdx, colName := range stats.ColumnNames {
-		r.analyzeColumn(records, colIdx, colName, stats, config.NullValues)
+		stats.ColumnsStats[colName] = &stat.ColumnStats{}
+		r.analyzeColumn(records, colIdx, colName, stats.ColumnsStats[colName], config.NullValues)
 	}
 
 	return stats, nil
 }
 
-func (r *CSVReader) sampleRecords(file *os.File, fileSize int64, config SamplingConfig) ([][]string, int64, error) {
+func (r *CSVStatsGatherer) sampleRecords(file *os.File, fileSize int64, config stat.SamplingConfig) ([][]string, int64, error) {
 	var allRecords [][]string
 	recordsPerPosition := config.SampleSize / config.RandomPositions
 	if recordsPerPosition < 1 {
@@ -151,7 +138,7 @@ func (r *CSVReader) sampleRecords(file *os.File, fileSize int64, config Sampling
 	return allRecords, readerBytes, nil
 }
 
-func (r *CSVReader) readFromPosition(file *os.File, maxRecords int) ([][]string, error) {
+func (r *CSVStatsGatherer) readFromPosition(file *os.File, maxRecords int) ([][]string, error) {
 	reader := bufio.NewReader(file)
 
 	// Skip to next complete line (in case we're in the middle of a line)
@@ -179,7 +166,7 @@ func (r *CSVReader) readFromPosition(file *os.File, maxRecords int) ([][]string,
 	return records, nil
 }
 
-func (r *CSVReader) estimateRowCount(fileSize int64, readerBytes int64, config SamplingConfig) int64 {
+func (r *CSVStatsGatherer) estimateRowCount(fileSize int64, readerBytes int64, config stat.SamplingConfig) int64 {
 	// Simple estimation based on file size and sample density
 	avgBytesPerRecord := readerBytes / int64(config.SampleSize)
 	estimatedRows := fileSize / avgBytesPerRecord
@@ -197,7 +184,7 @@ func toStringComparable(v any) string {
 	}
 }
 
-func (r *CSVReader) analyzeColumn(records [][]string, colIdx int, colName string, stats *TableStats, nullValues []string) {
+func (r *CSVStatsGatherer) analyzeColumn(records [][]string, colIdx int, colName string, columnStats *stat.ColumnStats, nullValues []string) {
 	var nullCount int64
 	var minVal, maxVal interface{}
 
@@ -288,27 +275,27 @@ func (r *CSVReader) analyzeColumn(records [][]string, colIdx int, colName string
 	// Set column type
 	if isNumeric {
 		if isFloat {
-			stats.ColumnTypes[colName] = "float64"
+			columnStats.Type = "float64"
 		} else {
-			stats.ColumnTypes[colName] = "int64"
+			columnStats.Type = "int64"
 		}
 
 		// Calculate aggregates for numeric columns
 		if len(numericValues) > 0 {
-			stats.Aggregates[colName] = calculateAggregates(numericValues)
+			columnStats.Aggregate = calculateAggregates(numericValues)
 		}
 	} else if isDateTime {
-		stats.ColumnTypes[colName] = "datetime"
+		columnStats.Type = "datetime"
 	} else if isDate {
-		stats.ColumnTypes[colName] = "date"
+		columnStats.Type = "date"
 	} else if isBool {
-		stats.ColumnTypes[colName] = "bool"
+		columnStats.Type = "bool"
 	} else {
-		stats.ColumnTypes[colName] = "string"
+		columnStats.Type = "string"
 	}
 
-	stats.NullCounts[colName] = nullCount
-	stats.NullPercentage[colName] = float64(nullCount) / float64(len(records)) * 100
-	stats.MinValues[colName] = minVal
-	stats.MaxValues[colName] = maxVal
+	columnStats.NullCount = nullCount
+	columnStats.NullPercentage = (float64(nullCount) / float64(len(records))) * 100
+	columnStats.MinValue = minVal
+	columnStats.MaxValue = maxVal
 }
